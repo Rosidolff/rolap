@@ -1,0 +1,49 @@
+# General
+.DS_Store
+.vscode/
+.idea/
+*.log
+*.sqlite3
+
+# Python / Backend
+backend/venv/
+backend/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+__pycache__/
+
+# Flask
+instance/
+.webassets-cache
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Data Storage (Local DB)
+data_storage/
+
+# Environment Variables
+.env
+
+# Audio App
+audioapp(copy)/
+*.db
+backend/rpg_music.db
+backend/data/
+# backend/assets/ # Uncomment to ignore audio assets (recommended for large libraries)
