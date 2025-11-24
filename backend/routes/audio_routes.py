@@ -1,15 +1,12 @@
 import os
 import shutil
 import uuid
-from flask import Blueprint, jsonify, request, send_from_directory, current_app
+from flask import Blueprint, jsonify, request, current_app
 import data_manager
 
 audio_bp = Blueprint('audio_bp', __name__)
 
-# Helper to get assets dir. 
-# We assume assets is in the parent directory of this file's directory (backend/assets)
 def get_assets_dir():
-    # backend/routes/audio_routes.py -> backend/routes -> backend -> backend/assets
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_dir, 'assets')
 
@@ -20,6 +17,36 @@ def prune_system():
         return jsonify({"status": "success", "message": "System cleaned"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@audio_bp.route('/structure', methods=['GET'])
+def get_structure():
+    assets_dir = get_assets_dir()
+    structure = {}
+    
+    if not os.path.exists(assets_dir):
+        return jsonify(structure)
+
+    for frame in os.listdir(assets_dir):
+        frame_path = os.path.join(assets_dir, frame)
+        if not os.path.isdir(frame_path) or frame == 'mocks': continue
+        
+        structure[frame] = {}
+        for t_type in os.listdir(frame_path):
+            type_path = os.path.join(frame_path, t_type)
+            if not os.path.isdir(type_path): continue
+            
+            structure[frame][t_type] = {}
+            for cat in os.listdir(type_path):
+                cat_path = os.path.join(type_path, cat)
+                if not os.path.isdir(cat_path): continue
+                
+                subcats = [
+                    sub for sub in os.listdir(cat_path) 
+                    if os.path.isdir(os.path.join(cat_path, sub))
+                ]
+                structure[frame][t_type][cat] = subcats
+                
+    return jsonify(structure)
 
 @audio_bp.route('/tracks', methods=['GET'])
 def get_tracks():
@@ -53,12 +80,6 @@ def get_tracks():
                 track_meta = metadata.get(rel_path, {})
                 default_icon = 'CloudRain' if t_type == 'ambience' else 'Music'
                 icon = track_meta.get('icon', default_icon)
-
-                # Construct URL. Assuming app serves assets at /assets/
-                # We might need to adjust this if we serve assets via a different route or static folder
-                # For now, let's assume the main app will have a route for /assets/<path>
-                # Or we can serve it via this blueprint if we want.
-                # Let's use a relative URL or absolute based on request.host_url
                 
                 tracks.append({
                     "id": rel_path,
@@ -85,11 +106,17 @@ def upload_track():
     icon = request.form.get('icon', 'CloudRain')
     
     frame = request.form.get('frame', 'Global')
-    if request.form.get('is_global') == 'true': frame = 'Global'
+    if t_type == 'music':
+        if frame == 'Global': frame = 'Fantasy' 
+    else:
+        if request.form.get('is_global') == 'true': frame = 'Global'
+    
     frame = safe_name(frame)
-        
     category = safe_name(request.form.get('category', 'General'))
     subcategory = safe_name(request.form.get('subcategory', ''))
+
+    if t_type == 'music' and not subcategory:
+        subcategory = 'General'
 
     assets_dir = get_assets_dir()
     save_path = os.path.join(assets_dir, frame, t_type, category, subcategory)
@@ -103,16 +130,32 @@ def upload_track():
     
     return jsonify({"status": "success"}), 201
 
+@audio_bp.route('/tracks', methods=['DELETE'])
+def delete_track():
+    track_id = request.args.get('id')
+    if not track_id: return jsonify({'error': 'Missing id'}), 400
+    
+    assets_dir = get_assets_dir()
+    full_path = os.path.join(assets_dir, track_id.replace('/', os.sep))
+    
+    if os.path.exists(full_path):
+        os.remove(full_path)
+        return jsonify({"status": "deleted"})
+    return jsonify({"error": "File not found"}), 404
+
 @audio_bp.route('/tracks/move', methods=['POST'])
 def move_track():
     data = request.json
     track_id = data.get('trackId')
     new_frame = data.get('newFrame', 'Global')
     new_category = data.get('newCategory')
-    new_subcategory = data.get('newSubcategory')
+    new_subcategory = data.get('newSubcategory', '')
     t_type = data.get('type', 'music') 
 
     if not track_id or not new_category: return jsonify({'error': 'Missing data'}), 400
+
+    if t_type == 'music' and not new_subcategory:
+        new_subcategory = 'General'
 
     assets_dir = get_assets_dir()
     src_path = os.path.join(assets_dir, track_id.replace('/', os.sep))
@@ -125,10 +168,8 @@ def move_track():
     try:
         os.makedirs(dest_dir, exist_ok=True)
         shutil.move(src_path, dest_path)
-        
         new_rel_path = os.path.relpath(dest_path, assets_dir).replace('\\', '/')
         data_manager.update_metadata_id(track_id, new_rel_path)
-        
         return jsonify({'status': 'moved'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -138,7 +179,6 @@ def rename_track():
     data = request.json
     track_id = data.get('trackId')
     new_name = data.get('newName')
-    
     if not track_id or not new_name: return jsonify({'error': 'Missing data'}), 400
 
     assets_dir = get_assets_dir()
@@ -154,10 +194,108 @@ def rename_track():
         os.rename(src_path, dest_path)
         new_rel_path = os.path.relpath(dest_path, assets_dir).replace('\\', '/')
         data_manager.update_metadata_id(track_id, new_rel_path)
-        
         return jsonify({'status': 'renamed'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@audio_bp.route('/tracks/metadata', methods=['PATCH'])
+def update_track_metadata():
+    data = request.json
+    track_id = data.get('trackId')
+    icon = data.get('icon')
+    if not track_id: return jsonify({'error': 'Missing trackId'}), 400
+    updates = {}
+    if icon: updates['icon'] = icon
+    if updates:
+        data_manager.save_track_metadata(track_id, updates)
+        return jsonify({'status': 'updated'})
+    return jsonify({'status': 'no changes'})
+
+@audio_bp.route('/categories/rename', methods=['POST'])
+def rename_category():
+    data = request.json
+    frame = data.get('frame', 'Global')
+    t_type = data.get('type', 'music')
+    old_name = data.get('oldName')
+    new_name = data.get('newName')
+    parent_cat = data.get('parent') # CORRECCIÓN: Usar 'parent' consistentemente
+
+    if not old_name or not new_name: return jsonify({'error': 'Missing names'}), 400
+
+    assets_dir = get_assets_dir()
+    
+    if parent_cat:
+        base_path = os.path.join(assets_dir, frame, t_type, parent_cat)
+        rel_base = f"{frame}/{t_type}/{parent_cat}"
+    else:
+        base_path = os.path.join(assets_dir, frame, t_type)
+        rel_base = f"{frame}/{t_type}"
+    
+    src = os.path.join(base_path, old_name)
+    dst = os.path.join(base_path, new_name)
+
+    if os.path.exists(src):
+        try:
+            os.rename(src, dst)
+            
+            old_rel_prefix = f"{rel_base}/{old_name}/".replace('\\', '/')
+            new_rel_prefix = f"{rel_base}/{new_name}/".replace('\\', '/')
+            
+            meta = data_manager.get_all_metadata()
+            keys_to_update = [k for k in meta.keys() if k.startswith(old_rel_prefix)]
+            
+            for old_key in keys_to_update:
+                new_key = old_key.replace(old_rel_prefix, new_rel_prefix, 1)
+                data_manager.update_metadata_id(old_key, new_key)
+
+            return jsonify({'status': 'renamed'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+            
+    return jsonify({'error': 'Category not found', 'path': src}), 404
+
+@audio_bp.route('/categories', methods=['DELETE'])
+def delete_category():
+    frame = request.args.get('frame', 'Global')
+    t_type = request.args.get('type', 'music')
+    name = request.args.get('name')
+    parent = request.args.get('parent')
+
+    if not name: return jsonify({'error': 'Missing name'}), 400
+
+    assets_dir = get_assets_dir()
+    path = os.path.join(assets_dir, frame, t_type)
+    if parent: path = os.path.join(path, parent)
+    path = os.path.join(path, name)
+
+    if os.path.exists(path):
+        try:
+            shutil.rmtree(path)
+            return jsonify({'status': 'deleted'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    return jsonify({'error': 'Not found'}), 404
+
+@audio_bp.route('/categories', methods=['POST'])
+def create_category():
+    data = request.json
+    frame = data.get('frame', 'Global')
+    t_type = data.get('type', 'music')
+    name = data.get('name')
+    parent = data.get('parent')
+
+    if not name: return jsonify({'error': 'Missing name'}), 400
+
+    assets_dir = get_assets_dir()
+    path = os.path.join(assets_dir, frame, t_type)
+    if parent: path = os.path.join(path, parent)
+    path = os.path.join(path, name)
+
+    os.makedirs(path, exist_ok=True)
+    if t_type == 'music' and not parent:
+        os.makedirs(os.path.join(path, "General"), exist_ok=True)
+
+    return jsonify({'status': 'created'})
 
 @audio_bp.route('/settings', methods=['GET', 'POST'])
 def handle_settings():

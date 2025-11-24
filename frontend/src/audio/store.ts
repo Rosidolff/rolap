@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import type { Frame, Track, ActiveAmbience, AmbiencePreset, PlaybackMode } from './types';
 
-// Definición del contexto para la IA
 interface AIContextState {
     campaignId?: string;
     mode: 'vault' | 'session';
@@ -10,8 +9,21 @@ interface AIContextState {
 
 interface AppState {
     currentFrame: Frame;
+    
+    // Volúmenes
     masterVolume: number;
+    musicMasterVolume: number;
+    ambienceMasterVolume: number;
+    sfxMasterVolume: number;
+
+    // Estados de Mute
+    isMasterMuted: boolean;
+    isMusicMasterMuted: boolean;
+    isAmbienceMasterMuted: boolean;
+    isSFXMasterMuted: boolean;
+
     tracks: Track[];
+    folderStructure: Record<string, any>;
     presets: AmbiencePreset[];
     playlistOrders: Record<string, string[]>;
 
@@ -31,27 +43,46 @@ interface AppState {
     activeSFXIds: string[]; 
     sfxTrigger: { track: Track, triggerId: number } | null;
 
-    // --- ESTADO IA ---
     aiContext: AIContextState;
     setAiContext: (ctx: AIContextState) => void;
 
     fetchTracks: () => Promise<void>;
+    fetchStructure: () => Promise<void>;
     fetchPresets: () => Promise<void>;
     loadSettings: () => Promise<void>;
     saveSettings: () => void;
 
     setFrame: (frame: Frame) => void;
+    
+    // Setters de Volumen
     setMasterVolume: (volume: number) => void;
+    setMusicMasterVolume: (volume: number) => void;
+    setAmbienceMasterVolume: (volume: number) => void;
+    setSFXMasterVolume: (volume: number) => void;
+
+    // Toggles de Mute
+    toggleMasterMute: () => void;
+    toggleMusicMasterMute: () => void;
+    toggleAmbienceMasterMute: () => void;
+    toggleSFXMasterMute: () => void;
 
     playMusic: (track: Track, contextPlaylist?: Track[]) => void;
     pauseMusic: () => void;
     stopMusic: () => void;
     nextTrack: () => void;
+    skipTrack: () => void;
     setPlaybackMode: (mode: PlaybackMode) => void;
     reorderPlaylist: (categoryKey: string, newOrder: Track[]) => void;
     moveTrackFile: (track: Track, newCategory: string, newSubcategory: string) => Promise<void>;
     renameTrack: (track: Track, newName: string) => Promise<void>;
     
+    deleteTrack: (track: Track) => Promise<void>;
+    updateTrackIcon: (track: Track, iconName: string) => Promise<void>;
+    
+    createCategory: (type: string, name: string, parent?: string) => Promise<void>;
+    renameCategory: (type: string, oldName: string, newName: string, parent?: string) => Promise<void>;
+    deleteCategory: (type: string, name: string, parent?: string) => Promise<void>;
+
     setMusicVolume: (volume: number) => void;
     setMusicProgress: (time: number, duration: number) => void;
     requestSeek: (time: number) => void;
@@ -69,12 +100,25 @@ interface AppState {
 
     toggleSFX: (track: Track) => void;
     sfxFinished: (trackId: string) => void;
+    
+    panic: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
     currentFrame: 'Fantasy',
+    
     masterVolume: 50,
+    musicMasterVolume: 80,
+    ambienceMasterVolume: 80,
+    sfxMasterVolume: 100,
+
+    isMasterMuted: false,
+    isMusicMasterMuted: false,
+    isAmbienceMasterMuted: false,
+    isSFXMasterMuted: false,
+
     tracks: [],
+    folderStructure: {},
     presets: [],
     playlistOrders: {},
 
@@ -94,7 +138,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     activeSFXIds: [],
     sfxTrigger: null,
 
-    // --- INICIALIZACIÓN IA ---
     aiContext: { mode: 'vault' },
     setAiContext: (ctx) => set({ aiContext: ctx }),
 
@@ -105,6 +148,13 @@ export const useAppStore = create<AppState>((set, get) => ({
                 fetch('http://localhost:5000/api/playlist/orders')
             ]);
             set({ tracks: await tracksRes.json(), playlistOrders: await ordersRes.json() });
+            get().fetchStructure();
+        } catch (e) { console.error(e); }
+    },
+    fetchStructure: async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/structure');
+            set({ folderStructure: await res.json() });
         } catch (e) { console.error(e); }
     },
     fetchPresets: async () => {
@@ -117,20 +167,35 @@ export const useAppStore = create<AppState>((set, get) => ({
         try {
             const res = await fetch('http://localhost:5000/api/settings');
             const settings = await res.json();
-            set({ masterVolume: settings.masterVolume ?? 50, currentFrame: settings.lastFrame ?? 'Fantasy' });
+            set({ 
+                masterVolume: settings.masterVolume ?? 50, 
+                currentFrame: settings.lastFrame ?? 'Fantasy',
+                musicMasterVolume: settings.musicMasterVolume ?? 80,
+                ambienceMasterVolume: settings.ambienceMasterVolume ?? 80,
+                sfxMasterVolume: settings.sfxMasterVolume ?? 100,
+            });
         } catch (e) { console.error(e); }
     },
     saveSettings: () => {
-        const { masterVolume, currentFrame } = get();
+        const { masterVolume, currentFrame, musicMasterVolume, ambienceMasterVolume, sfxMasterVolume } = get();
         fetch('http://localhost:5000/api/settings', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ masterVolume, lastFrame: currentFrame })
+            body: JSON.stringify({ masterVolume, lastFrame: currentFrame, musicMasterVolume, ambienceMasterVolume, sfxMasterVolume })
         }).catch(console.error);
     },
 
     setFrame: (frame) => { set({ currentFrame: frame }); get().saveSettings(); },
-    setMasterVolume: (volume) => { set({ masterVolume: volume }); if (Math.random() > 0.8) get().saveSettings(); },
+    
+    setMasterVolume: (volume) => { set({ masterVolume: volume, isMasterMuted: false }); get().saveSettings(); },
+    setMusicMasterVolume: (volume) => { set({ musicMasterVolume: volume, isMusicMasterMuted: false }); get().saveSettings(); },
+    setAmbienceMasterVolume: (volume) => { set({ ambienceMasterVolume: volume, isAmbienceMasterMuted: false }); get().saveSettings(); },
+    setSFXMasterVolume: (volume) => { set({ sfxMasterVolume: volume, isSFXMasterMuted: false }); get().saveSettings(); },
+
+    toggleMasterMute: () => set(s => ({ isMasterMuted: !s.isMasterMuted })),
+    toggleMusicMasterMute: () => set(s => ({ isMusicMasterMuted: !s.isMusicMasterMuted })),
+    toggleAmbienceMasterMute: () => set(s => ({ isAmbienceMasterMuted: !s.isAmbienceMasterMuted })),
+    toggleSFXMasterMute: () => set(s => ({ isSFXMasterMuted: !s.isSFXMasterMuted })),
 
     playMusic: (track, contextPlaylist) => {
         let newPlaylist = contextPlaylist || get().currentPlaylist;
@@ -159,33 +224,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         set({ activeMusic: currentPlaylist[nextIndex], isPlayingMusic: true });
     },
 
+    skipTrack: () => {
+        get().nextTrack();
+    },
+
     reorderPlaylist: async (categoryKey, newOrder) => {
         set(state => {
             const newOrders = { ...state.playlistOrders, [categoryKey]: newOrder.map(t => t.id) };
-            
             let updatedPlaylist = state.currentPlaylist;
             const isPlayingFromThisList = state.activeMusic && newOrder.find(t => t.id === state.activeMusic?.id);
-            
-            if (isPlayingFromThisList) {
-                updatedPlaylist = newOrder;
-            }
-
+            if (isPlayingFromThisList) { updatedPlaylist = newOrder; }
             return { playlistOrders: newOrders, currentPlaylist: updatedPlaylist };
         });
-
         await fetch('http://localhost:5000/api/playlist/order', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ key: categoryKey, trackIds: newOrder.map(t => t.id) })
         });
     },
 
     moveTrackFile: async (track, newCategory, newSubcategory) => {
-        const targetFrame = track.frame || 'Global';
+        const targetFrame = track.type === 'music' ? (track.frame || 'Fantasy') : (track.frame || 'Global');
         try {
             const res = await fetch('http://localhost:5000/api/tracks/move', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     trackId: track.id,
                     newFrame: targetFrame,
@@ -196,19 +257,71 @@ export const useAppStore = create<AppState>((set, get) => ({
             });
             if (!res.ok) throw new Error('Move failed');
             await get().fetchTracks();
+            await get().fetchStructure();
         } catch (e) { console.error(e); }
     },
 
     renameTrack: async (track, newName) => {
         try {
             const res = await fetch('http://localhost:5000/api/tracks/rename', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                method: 'POST', headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ trackId: track.id, newName })
             });
             if (!res.ok) throw new Error('Rename failed');
             await get().fetchTracks();
         } catch (e) { console.error(e); }
+    },
+
+    deleteTrack: async (track) => {
+        try {
+            await fetch(`http://localhost:5000/api/tracks?id=${encodeURIComponent(track.id)}`, { method: 'DELETE' });
+            const { activeMusic, activeAmbience, activeSFXIds } = get();
+            if (activeMusic?.id === track.id) get().stopMusic();
+            
+            const newAmbience = activeAmbience.filter(a => a.track.id !== track.id);
+            if (newAmbience.length !== activeAmbience.length) set({ activeAmbience: newAmbience });
+
+            if (activeSFXIds.includes(track.id)) set({ activeSFXIds: activeSFXIds.filter(id => id !== track.id) });
+
+            await get().fetchTracks();
+        } catch (e) { console.error(e); }
+    },
+
+    updateTrackIcon: async (track, iconName) => {
+        try {
+            await fetch('http://localhost:5000/api/tracks/metadata', {
+                method: 'PATCH', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ trackId: track.id, icon: iconName })
+            });
+            await get().fetchTracks();
+        } catch(e) { console.error(e); }
+    },
+
+    createCategory: async (type, name, parent) => {
+        const { currentFrame } = get();
+        await fetch('http://localhost:5000/api/categories', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ type, name, parent, frame: currentFrame })
+        });
+        await get().fetchTracks();
+        await get().fetchStructure();
+    },
+    renameCategory: async (type, oldName, newName, parent) => {
+        const { currentFrame } = get();
+        await fetch('http://localhost:5000/api/categories/rename', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ type, oldName, newName, parent, frame: currentFrame })
+        });
+        await get().fetchTracks();
+        await get().fetchStructure();
+    },
+    deleteCategory: async (type, name, parent) => {
+        const { currentFrame } = get();
+        await fetch(`http://localhost:5000/api/categories?type=${type}&name=${name}&frame=${currentFrame}${parent ? '&parent='+parent : ''}`, {
+            method: 'DELETE'
+        });
+        await get().fetchTracks();
+        await get().fetchStructure();
     },
 
     setMusicVolume: (volume) => set({ musicVolume: volume }),
@@ -264,5 +377,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (isPlaying) set({ activeSFXIds: activeSFXIds.filter(id => id !== track.id) });
         else set({ activeSFXIds: [...activeSFXIds, track.id], sfxTrigger: { track, triggerId: Date.now() } });
     },
-    sfxFinished: (trackId) => { set(state => ({ activeSFXIds: state.activeSFXIds.filter(id => id !== trackId) })); }
+    sfxFinished: (trackId) => { set(state => ({ activeSFXIds: state.activeSFXIds.filter(id => id !== trackId) })); },
+
+    panic: () => {
+        set({
+            activeMusic: null,
+            isPlayingMusic: false,
+            musicCurrentTime: 0,
+            activeAmbience: [],
+            activeSFXIds: [],
+            sfxTrigger: null 
+        });
+    }
 }));

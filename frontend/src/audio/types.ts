@@ -11,7 +11,7 @@ export interface Track {
     category?: string; 
     subcategory?: string; 
     duration?: number;
-    icon?: string; // NUEVO: Nombre del icono
+    icon?: string; 
 }
 
 export interface ActiveAmbience {
@@ -34,6 +34,8 @@ export interface Playlist {
     tracks: Track[];
 }
 
+// Estructura por defecto para la creación inicial o selects,
+// aunque la vista ahora es dinámica.
 export const MUSIC_CATEGORIES: Record<string, string[]> = {
     'Acción': ['Combate', 'Persecución', 'Clímax', 'Asedio'],
     'Cotidiano': ['Hoguera', 'Taberna', 'Viaje', 'Mercado'],
@@ -47,7 +49,6 @@ export const SFX_CATEGORIES = [
     'Combate', 'Social', 'Entorno', 'Misterio', 'Magia', 'Tecnología'
 ] as const;
 
-// NUEVO: Lista de iconos para Ambientes
 export const AMBIENCE_ICONS = [
     'CloudRain', 'Sun', 'Wind', 'Flame', 'Waves', 'Trees', 'Mountain', 'Moon', 
     'Snowflake', 'CloudLightning', 'Ghost', 'Skull', 'Sword', 'Anchor', 
