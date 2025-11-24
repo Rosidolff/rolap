@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import type { Frame, Track, ActiveAmbience, AmbiencePreset, PlaybackMode } from './types';
 
+// Definición del contexto para la IA
+interface AIContextState {
+    campaignId?: string;
+    mode: 'vault' | 'session';
+    sessionId?: string;
+}
+
 interface AppState {
     currentFrame: Frame;
     masterVolume: number;
@@ -23,6 +30,10 @@ interface AppState {
 
     activeSFXIds: string[]; 
     sfxTrigger: { track: Track, triggerId: number } | null;
+
+    // --- ESTADO IA ---
+    aiContext: AIContextState;
+    setAiContext: (ctx: AIContextState) => void;
 
     fetchTracks: () => Promise<void>;
     fetchPresets: () => Promise<void>;
@@ -49,7 +60,7 @@ interface AppState {
     stopAmbience: (instanceId: string) => void;
     setAmbienceVolume: (instanceId: string, volume: number) => void;
     toggleAmbienceMute: (instanceId: string) => void;
-    reorderActiveAmbience: (newOrder: ActiveAmbience[]) => void; // NUEVO
+    reorderActiveAmbience: (newOrder: ActiveAmbience[]) => void;
     
     loadPreset: (preset: AmbiencePreset) => void;
     saveNewPreset: (name: string) => Promise<void>;
@@ -75,13 +86,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     seekRequest: null,
     
     currentPlaylist: [],
-    playbackMode: 'sequential', // CORRECCIÓN: Por defecto secuencial
+    playbackMode: 'sequential',
 
     activeAmbience: [],
     activePresetId: null,
 
     activeSFXIds: [],
     sfxTrigger: null,
+
+    // --- INICIALIZACIÓN IA ---
+    aiContext: { mode: 'vault' },
+    setAiContext: (ctx) => set({ aiContext: ctx }),
 
     fetchTracks: async () => {
         try {
@@ -133,7 +148,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         let nextIndex = 0;
         const currentIndex = currentPlaylist.findIndex(t => t.id === activeMusic.id);
         
-        // Si no se encuentra la pista actual (ej: tras reordenar drásticamente), empezamos por el principio
         if (currentIndex === -1) {
             nextIndex = 0;
         } else if (playbackMode === 'shuffle') {
@@ -149,9 +163,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         set(state => {
             const newOrders = { ...state.playlistOrders, [categoryKey]: newOrder.map(t => t.id) };
             
-            // Actualización más agresiva de la playlist actual
-            // Si la canción que suena está en la nueva lista, actualizamos currentPlaylist inmediatamente
-            // para que el orden se respete en el siguiente nextTrack()
             let updatedPlaylist = state.currentPlaylist;
             const isPlayingFromThisList = state.activeMusic && newOrder.find(t => t.id === state.activeMusic?.id);
             
@@ -211,7 +222,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     stopAmbience: (id) => set(state => ({ activeAmbience: state.activeAmbience.filter(a => a.instanceId !== id) })),
     setAmbienceVolume: (id, vol) => set(state => ({ activeAmbience: state.activeAmbience.map(a => a.instanceId === id ? { ...a, volume: vol } : a) })),
     toggleAmbienceMute: (id) => set(state => ({ activeAmbience: state.activeAmbience.map(a => a.instanceId === id ? { ...a, isMuted: !a.isMuted } : a) })),
-    reorderActiveAmbience: (newOrder) => set({ activeAmbience: newOrder }), // Implementación de la acción
+    reorderActiveAmbience: (newOrder) => set({ activeAmbience: newOrder }),
     
     loadPreset: (preset) => {
         set({ activeAmbience: [], activePresetId: preset.id });

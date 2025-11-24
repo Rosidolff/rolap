@@ -7,7 +7,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import TopNavBar from '../components/TopNavBar';
 import CampaignSidebar from '../components/CampaignSidebar';
-import { useChat } from '../context/ChatContext'; 
+import { useAppStore } from '../audio/store';
 
 const ITEM_TYPES = ["character", "npc", "scene", "secret", "location", "monster", "item"];
 
@@ -243,11 +243,12 @@ export default function VaultManager() {
 
     const allTags = Array.from(new Set(items.flatMap(i => i.tags || [])));
 
-    const { setAiContext } = useChat();
+    const { setAiContext } = useAppStore();
 
     useEffect(() => {
         if (id) {
-            loadData();
+            // Carga inicial con loading
+            loadData(true);
             setAiContext({ campaignId: id, mode: 'vault' });
         }
     }, [id, setAiContext]);
@@ -262,9 +263,10 @@ export default function VaultManager() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [editingId, editData]);
 
-    const loadData = async () => {
+    // CORRECCIÓN: `refresh` para refrescar sin mostrar spinner
+    const loadData = async (isInitial = false) => {
         if (!id) return;
-        setLoading(true);
+        if (isInitial) setLoading(true);
         try {
             const [vaultData, campData] = await Promise.all([
                 api.vault.list(id),
@@ -276,7 +278,7 @@ export default function VaultManager() {
             setItems(vaultData);
             setActiveSession(campData);
         } finally {
-            setLoading(false);
+            if (isInitial) setLoading(false);
         }
     };
 
@@ -304,7 +306,7 @@ export default function VaultManager() {
         else if (type === 'location') { defaultContent.aspects = ""; }
 
         const newItem = await api.vault.create(id, { type, content: defaultContent, tags: [], usage_count: 0 });
-        await loadData();
+        await loadData(false); // Refresh silencioso
         setEditingId(newItem.id);
         setEditData(newItem);
         if (filterType === 'all') setOpenGroups(prev => ({ ...prev, [type]: true }));
@@ -313,14 +315,14 @@ export default function VaultManager() {
     const handleDelete = async (itemId: string) => {
         if (!id || !confirm("¿Borrar elemento permanentemente?")) return;
         await api.vault.delete(id, itemId);
-        loadData();
+        loadData(false); // Refresh silencioso
     };
 
     const saveEdit = async () => {
         if (!id || !editingId) return;
         await api.vault.update(id, editingId, editData);
         setEditingId(null);
-        loadData();
+        loadData(false); // Refresh silencioso para evitar parpadeo
     };
 
     const toggleSessionItem = async (itemId: string) => {
@@ -352,7 +354,7 @@ export default function VaultManager() {
         setActiveSession(updatedSession);
 
         await api.vault.update(id, itemId, { status: newStatus });
-        loadData();
+        loadData(false); // Refresh silencioso
     };
 
     const startEditing = (item: any) => { setEditingId(item.id); setEditData(JSON.parse(JSON.stringify(item))); };
@@ -492,7 +494,7 @@ export default function VaultManager() {
                                 <>
                                     {item.type === 'npc' && <>{item.content.archetype && <span className="text-yellow-500 font-mono text-[11px] mr-2">[{item.content.archetype}]</span>}{item.content.relationship && <span className="text-blue-300 italic text-[11px] mr-2">{item.content.relationship}</span>}</>}
                                     {item.type === 'scene' && item.content.scene_type && <span className="text-purple-400 text-[10px] uppercase font-bold border border-purple-900 px-1 rounded mr-2 align-middle">{item.content.scene_type}</span>}
-                                    {item.type === 'location' && item.content.aspects && <span className="text-green-400 font-mono text-[11px] mr-2">[{item.content.aspects}]</span>}
+                                    {item.type === 'location' && item.content.aspects && <span className="text-green-400 font-mono text-[10px] mr-2">[{item.content.aspects}]</span>}
                                     <span className="text-gray-600 mr-2">-</span><span className="text-gray-400">{item.content.description}</span>
                                 </>
                             )}

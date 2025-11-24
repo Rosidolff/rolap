@@ -7,7 +7,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import TopNavBar from '../components/TopNavBar';
 import CampaignSidebar from '../components/CampaignSidebar';
-import { useChat } from '../context/ChatContext';
+import { useAppStore } from '../audio/store'; // CORRECCIÓN: Usar store global
 
 const ITEM_TYPES = ["character", "npc", "scene", "secret", "location", "monster", "item"];
 const REUSABLE_TYPES = ["npc", "location", "item", "monster"];
@@ -174,10 +174,12 @@ export default function SessionRunner() {
     const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
     const [generatedSummary, setGeneratedSummary] = useState('');
 
-    const { setAiContext } = useChat();
+    // CORRECCIÓN: Usar Zustand en lugar de ChatContext
+    const { setAiContext } = useAppStore();
 
     useEffect(() => {
         if (id) {
+            // Solo carga inicial
             loadVault();
             initSession();
         }
@@ -203,7 +205,8 @@ export default function SessionRunner() {
 
     const initSession = async () => {
         if (!id) return;
-        setLoading(true);
+        // CORRECCIÓN: Solo mostrar spinner si no hay sesión cargada previamente
+        if (!session) setLoading(true); 
         try {
             const passedId = location.state?.sessionId;
             let target = null;
@@ -473,7 +476,6 @@ export default function SessionRunner() {
         );
     };
 
-    // ESTA PARTE HA SIDO MODIFICADA PARA LA ESTRUCTURA FIJA (SHELL)
     if (session && session.status === 'completed') {
         return (
             <div className="h-screen flex flex-col bg-gray-900 text-gray-300 p-8 items-center justify-center">

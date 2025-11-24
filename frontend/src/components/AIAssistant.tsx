@@ -3,23 +3,36 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPaperPlane, faMagic, faCommentDots, faChevronDown } from '@fortawesome/free-solid-svg-icons';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../services/api';
-import { useChat } from '../context/ChatContext';
+import { useAppStore } from '../audio/store';
+
+interface Message {
+    role: 'user' | 'ai';
+    text: string;
+}
 
 export default function AIAssistant() {
-    // Leemos todo del contexto
-    const { messages, addMessage, isOpen, setIsOpen, aiContext } = useChat();
+    // Usamos el store global de Zustand para saber dónde estamos
+    const { aiContext } = useAppStore();
     const { campaignId, mode, sessionId } = aiContext;
     
+    // Estado local para la UI del chat
+    const [isOpen, setIsOpen] = useState(false);
+    const [messages, setMessages] = useState<Message[]>([]);
     const [query, setQuery] = useState('');
     const [loading, setLoading] = useState(false);
+    
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const addMessage = (msg: Message) => {
+        setMessages(prev => [...prev, msg]);
+    };
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
     useEffect(() => {
-        scrollToBottom();
+        if (isOpen) scrollToBottom();
     }, [messages, isOpen]);
 
     const handleSend = async () => {
