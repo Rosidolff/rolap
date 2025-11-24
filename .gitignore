@@ -46,4 +46,4 @@ audioapp(copy)/
 *.db
 backend/rpg_music.db
 backend/data/
-# backend/assets/ # Uncomment to ignore audio assets (recommended for large libraries)
+backend/assets/ 
